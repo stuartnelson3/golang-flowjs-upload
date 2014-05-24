@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/codegangsta/martini"
 	"github.com/codegangsta/martini-contrib/render"
 	"io"
@@ -10,9 +9,16 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 )
 
+var completedFiles = make(chan string, 100)
+
 func main() {
+	for i := 0; i < 3; i++ {
+		go assembleFile(completedFiles)
+	}
+
 	m := martini.Classic()
 	m.Use(render.Renderer(render.Options{
 		Layout:     "layout",
@@ -61,49 +67,46 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) {
 		}
 		defer src.Close()
 
+		dst, err := os.Create(chunkDirPath + "/" + r.FormValue("flowChunkNumber"))
+		if err != nil {
+			w.Write([]byte("Error creating file"))
+			w.WriteHeader(500)
+			return
+		}
+		defer dst.Close()
+		io.Copy(dst, src)
+
 		if r.FormValue("flowChunkNumber") == r.FormValue("flowTotalChunks") {
-			// final chunk
-			fileInfos, err := ioutil.ReadDir(chunkDirPath)
-			if err != nil {
-				w.Write([]byte("Error reading chunk directory"))
-				w.WriteHeader(500)
-				return
-			}
-
-			// create final file to write to
-			dst, err := os.Create(r.FormValue("flowFilename"))
-			if err != nil {
-				w.Write([]byte("Error final file"))
-				w.WriteHeader(500)
-				return
-			}
-			defer dst.Close()
-
-			sort.Sort(ByChunk(fileInfos))
-			for _, fs := range fileInfos {
-				fmt.Println(fs.Name())
-				f, err := os.Open(chunkDirPath + "/" + fs.Name())
-				if err != nil {
-					w.Write([]byte("Error blob file"))
-					w.WriteHeader(500)
-					return
-				}
-				defer f.Close()
-				io.Copy(dst, f)
-			}
-			io.Copy(dst, src)
-			os.RemoveAll(chunkDirPath)
-		} else {
-			dst, err := os.Create(chunkDirPath + "/" + r.FormValue("flowChunkNumber"))
-			if err != nil {
-				w.Write([]byte("Error creating file"))
-				w.WriteHeader(500)
-				return
-			}
-			defer dst.Close()
-			io.Copy(dst, src)
+			completedFiles <- chunkDirPath
 		}
 	}
 	w.Write([]byte("success"))
 	w.WriteHeader(200)
+}
+
+func assembleFile(jobs <-chan string) {
+	for path := range jobs {
+		fileInfos, err := ioutil.ReadDir(path)
+		if err != nil {
+			return
+		}
+
+		// create final file to write to
+		dst, err := os.Create(strings.Split(path, "/")[2])
+		if err != nil {
+			return
+		}
+		defer dst.Close()
+
+		sort.Sort(ByChunk(fileInfos))
+		for _, fs := range fileInfos {
+			src, err := os.Open(path + "/" + fs.Name())
+			if err != nil {
+				return
+			}
+			defer src.Close()
+			io.Copy(dst, src)
+		}
+		os.RemoveAll(path)
+	}
 }
