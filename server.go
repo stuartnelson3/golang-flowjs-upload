@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"sort"
 	"strconv"
@@ -32,6 +33,9 @@ func main() {
 
 	m.Post("/upload", streamingReader)
 
+	go func() {
+		http.ListenAndServe("localhost:6060", nil)
+	}()
 	m.Run()
 }
 
