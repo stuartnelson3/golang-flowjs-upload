@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"github.com/codegangsta/martini"
 	"github.com/codegangsta/martini-contrib/render"
 	"io"
@@ -29,7 +30,7 @@ func main() {
 		r.HTML(200, "index", nil)
 	})
 
-	m.Post("/upload", chunkedReader)
+	m.Post("/upload", streamingReader)
 
 	m.Run()
 }
@@ -42,6 +43,88 @@ func (a ByChunk) Less(i, j int) bool {
 	ai, _ := strconv.Atoi(a[i].Name())
 	aj, _ := strconv.Atoi(a[j].Name())
 	return ai < aj
+}
+
+func streamingReader(w http.ResponseWriter, r *http.Request) {
+	buf := new(bytes.Buffer)
+	reader, err := r.MultipartReader()
+	// Part 1: Chunk Number
+	// Part 6: File Name
+	// Part 8: Total Chunks
+	// Part 9: Chunk Data
+	if err != nil {
+		w.Write([]byte("Error"))
+		w.WriteHeader(500)
+		return
+	}
+
+	part, err := reader.NextPart()
+	if err != nil {
+		w.Write([]byte("Error"))
+		w.WriteHeader(500)
+		return
+	}
+	io.Copy(buf, part)
+	chunkNo := buf.String()
+	buf.Reset()
+
+	for i := 0; i < 5; i++ {
+		// move through unused parts
+		part, err = reader.NextPart()
+		if err != nil {
+			w.Write([]byte("Error"))
+			w.WriteHeader(500)
+			return
+		}
+	}
+
+	io.Copy(buf, part)
+	fileName := buf.String()
+	buf.Reset()
+
+	for i := 0; i < 2; i++ {
+		// move through unused parts
+		part, err = reader.NextPart()
+		if err != nil {
+			w.Write([]byte("Error"))
+			w.WriteHeader(500)
+			return
+		}
+	}
+	io.Copy(buf, part)
+	chunkTotal := buf.String()
+	buf.Reset()
+
+	part, err = reader.NextPart()
+	if err != nil {
+		w.Write([]byte("Error"))
+		w.WriteHeader(500)
+		return
+	}
+
+	chunkDirPath := "./incomplete/" + fileName
+	_, err = os.Stat(chunkDirPath)
+	if err != nil {
+		err := os.MkdirAll(chunkDirPath, 02750)
+		if err != nil {
+			w.Write([]byte("Error creating tempdir"))
+			w.WriteHeader(500)
+			return
+		}
+	}
+
+	dst, err := os.Create(chunkDirPath + "/" + chunkNo)
+	if err != nil {
+		w.Write([]byte("Error creating file"))
+		w.WriteHeader(500)
+		return
+	}
+	defer dst.Close()
+	io.Copy(dst, part)
+
+	if chunkNo == chunkTotal {
+		completedFiles <- chunkDirPath
+	}
 }
 
 func chunkedReader(w http.ResponseWriter, r *http.Request) {
