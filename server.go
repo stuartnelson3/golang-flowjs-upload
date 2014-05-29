@@ -32,6 +32,7 @@ func main() {
 	})
 
 	m.Post("/upload", streamHandler(streamingReader))
+	m.Get("/upload", continueUpload)
 
 	go func() {
 		http.ListenAndServe("localhost:6060", nil)
@@ -54,6 +55,15 @@ type streamHandler func(http.ResponseWriter, *http.Request) error
 func (fn streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := fn(w, r); err != nil {
 		http.Error(w, err.Error(), 500)
+		return
+	}
+}
+
+func continueUpload(w http.ResponseWriter, r *http.Request) {
+	chunkDirPath := "./incomplete/" + r.FormValue("flowFilename") + "/" + r.FormValue("flowChunkNumber")
+	if _, err := os.Stat(chunkDirPath); err != nil {
+		w.WriteHeader(404)
+		return
 	}
 }
 
