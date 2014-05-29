@@ -31,7 +31,7 @@ func main() {
 		r.HTML(200, "index", nil)
 	})
 
-	m.Post("/upload", streamingReader)
+	m.Post("/upload", streamHandler(streamingReader))
 
 	go func() {
 		http.ListenAndServe("localhost:6060", nil)
@@ -49,7 +49,15 @@ func (a ByChunk) Less(i, j int) bool {
 	return ai < aj
 }
 
-func streamingReader(w http.ResponseWriter, r *http.Request) {
+type streamHandler func(http.ResponseWriter, *http.Request) error
+
+func (fn streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := fn(w, r); err != nil {
+		http.Error(w, err.Error(), 500)
+	}
+}
+
+func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	buf := new(bytes.Buffer)
 	reader, err := r.MultipartReader()
 	// Part 1: Chunk Number
@@ -57,16 +65,12 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 	// Part 8: Total Chunks
 	// Part 9: Chunk Data
 	if err != nil {
-		w.Write([]byte("Error"))
-		w.WriteHeader(500)
-		return
+		return err
 	}
 
 	part, err := reader.NextPart()
 	if err != nil {
-		w.Write([]byte("Error"))
-		w.WriteHeader(500)
-		return
+		return err
 	}
 	io.Copy(buf, part)
 	chunkNo := buf.String()
@@ -76,9 +80,7 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 		// move through unused parts
 		part, err = reader.NextPart()
 		if err != nil {
-			w.Write([]byte("Error"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 	}
 
@@ -90,9 +92,7 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 		// move through unused parts
 		part, err = reader.NextPart()
 		if err != nil {
-			w.Write([]byte("Error"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 	}
 	io.Copy(buf, part)
@@ -101,9 +101,7 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 
 	part, err = reader.NextPart()
 	if err != nil {
-		w.Write([]byte("Error"))
-		w.WriteHeader(500)
-		return
+		return err
 	}
 
 	chunkDirPath := "./incomplete/" + fileName
@@ -111,17 +109,13 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := os.MkdirAll(chunkDirPath, 02750)
 		if err != nil {
-			w.Write([]byte("Error creating tempdir"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 	}
 
 	dst, err := os.Create(chunkDirPath + "/" + chunkNo)
 	if err != nil {
-		w.Write([]byte("Error creating file"))
-		w.WriteHeader(500)
-		return
+		return err
 	}
 	defer dst.Close()
 	io.Copy(dst, part)
@@ -129,9 +123,10 @@ func streamingReader(w http.ResponseWriter, r *http.Request) {
 	if chunkNo == chunkTotal {
 		completedFiles <- chunkDirPath
 	}
+	return nil
 }
 
-func chunkedReader(w http.ResponseWriter, r *http.Request) {
+func chunkedReader(w http.ResponseWriter, r *http.Request) error {
 	r.ParseMultipartForm(25)
 
 	chunkDirPath := "./incomplete/" + r.FormValue("flowFilename")
@@ -139,26 +134,20 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := os.MkdirAll(chunkDirPath, 02750)
 		if err != nil {
-			w.Write([]byte("Error creating tempdir"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 	}
 
 	for _, fileHeader := range r.MultipartForm.File["file"] {
 		src, err := fileHeader.Open()
 		if err != nil {
-			w.Write([]byte("Error opening file"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 		defer src.Close()
 
 		dst, err := os.Create(chunkDirPath + "/" + r.FormValue("flowChunkNumber"))
 		if err != nil {
-			w.Write([]byte("Error creating file"))
-			w.WriteHeader(500)
-			return
+			return err
 		}
 		defer dst.Close()
 		io.Copy(dst, src)
@@ -167,8 +156,7 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) {
 			completedFiles <- chunkDirPath
 		}
 	}
-	w.Write([]byte("success"))
-	w.WriteHeader(200)
+	return nil
 }
 
 func assembleFile(jobs <-chan string) {
