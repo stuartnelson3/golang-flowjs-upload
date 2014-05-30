@@ -2,8 +2,7 @@ package main
 
 import (
 	"bytes"
-	"github.com/codegangsta/martini"
-	"github.com/codegangsta/martini-contrib/render"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -21,23 +20,28 @@ func main() {
 		go assembleFile(completedFiles)
 	}
 
-	m := martini.Classic()
-	m.Use(render.Renderer(render.Options{
-		Layout:     "layout",
-		Delims:     render.Delims{"{[{", "}]}"},
-		Extensions: []string{".html"}}))
+	m := http.NewServeMux()
 
-	m.Get("/", func(r render.Render) {
-		r.HTML(200, "index", nil)
+	m.Handle("/upload", streamHandler(uploadHandler))
+
+	m.HandleFunc("/public/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, r.URL.Path[1:])
 	})
 
-	m.Post("/upload", streamHandler(streamingReader))
-	m.Get("/upload", continueUpload)
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.WriteHeader(404)
+			return
+		}
+		f, _ := os.Open("./index.html")
+		body, _ := ioutil.ReadAll(f)
+		w.Write(body)
+	})
 
 	go func() {
 		http.ListenAndServe("localhost:6060", nil)
 	}()
-	m.Run()
+	http.ListenAndServe(":3000", m)
 }
 
 type ByChunk []os.FileInfo
@@ -50,6 +54,16 @@ func (a ByChunk) Less(i, j int) bool {
 	return ai < aj
 }
 
+func uploadHandler(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == "POST" {
+		return streamingReader(w, r)
+	} else if r.Method == "GET" {
+		return continueUpload(w, r)
+	} else {
+		return errors.New("Not found")
+	}
+}
+
 type streamHandler func(http.ResponseWriter, *http.Request) error
 
 func (fn streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,12 +73,12 @@ func (fn streamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func continueUpload(w http.ResponseWriter, r *http.Request) {
+func continueUpload(w http.ResponseWriter, r *http.Request) error {
 	chunkDirPath := "./incomplete/" + r.FormValue("flowFilename") + "/" + r.FormValue("flowChunkNumber")
 	if _, err := os.Stat(chunkDirPath); err != nil {
-		w.WriteHeader(404)
-		return
+		return err
 	}
+	return nil
 }
 
 func streamingReader(w http.ResponseWriter, r *http.Request) error {

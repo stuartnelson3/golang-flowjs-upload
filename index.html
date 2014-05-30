@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Stuart Nelson</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link type="text/css" rel="stylesheet" href="/public/style.css">
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.15/angular.min.js"></script>
+    <script type="text/javascript" src="/public/ng-flow-standalone.js"></script>
+    <script type="text/javascript" src="/public/script.js"></script>
+  </head>
+  <body ng-app="FlowApp">
+    <div
+      ng-controller="FlowCtrl"
+      flow-init
+      flow-files-submitted="$flow.upload()"
+      flow-file-success="$file.msg = $message">
+
+      <input type="file" flow-btn />
+
+      <div ng-repeat="file in $flow.files">
+        <img class="flow-preview" flow-img="file" />
+        <div>{{$index+1}} {{file.name}}</div>
+        <div>{{percentDone(file)}}</div>
+        <div class="progress-bar" ng-style="progress(file)"></div>
+      </div>
+    </div>
+  </body>
+</html>
