@@ -141,7 +141,16 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	defer dst.Close()
 	io.Copy(dst, part)
 
-	if chunkNo == chunkTotal {
+	fileInfos, err := ioutil.ReadDir(chunkDirPath)
+	if err != nil {
+		return err
+	}
+
+	cT, err := strconv.Atoi(chunkTotal)
+	if err != nil {
+		return err
+	}
+	if len(fileInfos) == cT {
 		completedFiles <- chunkDirPath
 	}
 	return nil
@@ -170,7 +179,17 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) error {
 		defer dst.Close()
 		io.Copy(dst, src)
 
-		if r.FormValue("flowChunkNumber") == r.FormValue("flowTotalChunks") {
+		fileInfos, err := ioutil.ReadDir(chunkDirPath)
+		if err != nil {
+			return err
+		}
+
+		cT, err := strconv.Atoi(r.FormValue("flowTotalChunks"))
+		if err != nil {
+			return err
+		}
+
+		if len(fileInfos) == cT {
 			completedFiles <- chunkDirPath
 		}
 	}
