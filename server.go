@@ -129,12 +129,9 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	chunkDirPath := "./incomplete/" + fileName
-	_, err = os.Stat(chunkDirPath)
+	err = os.MkdirAll(chunkDirPath, 02750)
 	if err != nil {
-		err := os.MkdirAll(chunkDirPath, 02750)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	dst, err := os.Create(chunkDirPath + "/" + chunkNo)
@@ -154,12 +151,9 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) error {
 	r.ParseMultipartForm(25)
 
 	chunkDirPath := "./incomplete/" + r.FormValue("flowFilename")
-	_, err := os.Stat(chunkDirPath)
+	err := os.MkdirAll(chunkDirPath, 02750)
 	if err != nil {
-		err := os.MkdirAll(chunkDirPath, 02750)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	for _, fileHeader := range r.MultipartForm.File["file"] {
