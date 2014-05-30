@@ -18,7 +18,6 @@
       <input type="file" flow-btn />
 
       <div ng-repeat="file in $flow.files">
-        <img class="flow-preview" flow-img="file" />
         <div>{{$index+1}} {{file.name}}</div>
         <div>{{percentDone(file)}}</div>
         <div class="progress-bar" ng-style="progress(file)"></div>
