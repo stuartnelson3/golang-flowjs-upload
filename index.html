@@ -20,6 +20,8 @@
       <div ng-repeat="file in $flow.files">
         <div>{{$index+1}} {{file.name}}</div>
         <div>{{percentDone(file)}}</div>
+        <div ng-hide="file.paused" ng-click="file.flowObj.pause()">PAUSE</div>
+        <div ng-show="file.paused" ng-click="file.flowObj.resume()">RESUME</div>
         <div class="progress-bar" ng-style="progress(file)"></div>
       </div>
     </div>
