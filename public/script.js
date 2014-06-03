@@ -9,7 +9,7 @@ app.config(['flowFactoryProvider', function(flowFactoryProvider) {
 
 app.controller("FlowCtrl", ["$scope", function($scope) {
   $scope.percentDone = function(file) {
-    return ((file._prevUploadedSize / file.size).toFixed(4) * 100).toString() + "%";
+    return Math.round(file._prevUploadedSize / file.size * 100).toString() + "%";
   };
 
   $scope.progress = function(file) {
