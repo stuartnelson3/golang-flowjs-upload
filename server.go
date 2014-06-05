@@ -203,27 +203,31 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) error {
 
 func assembleFile(jobs <-chan string) {
 	for path := range jobs {
-		fileInfos, err := ioutil.ReadDir(path)
-		if err != nil {
-			return
-		}
-
-		// create final file to write to
-		dst, err := os.Create(strings.Split(path, "/")[2])
-		if err != nil {
-			return
-		}
-		defer dst.Close()
-
-		sort.Sort(ByChunk(fileInfos))
-		for _, fs := range fileInfos {
-			src, err := os.Open(path + "/" + fs.Name())
-			if err != nil {
-				return
-			}
-			defer src.Close()
-			io.Copy(dst, src)
-		}
-		os.RemoveAll(path)
+		assemble(path)
 	}
+}
+
+func assemble(path string) {
+	fileInfos, err := ioutil.ReadDir(path)
+	if err != nil {
+		return
+	}
+
+	// create final file to write to
+	dst, err := os.Create(strings.Split(path, "/")[2])
+	if err != nil {
+		return
+	}
+	defer dst.Close()
+
+	sort.Sort(ByChunk(fileInfos))
+	for _, fs := range fileInfos {
+		src, err := os.Open(path + "/" + fs.Name())
+		if err != nil {
+			return
+		}
+		defer src.Close()
+		io.Copy(dst, src)
+	}
+	os.RemoveAll(path)
 }
