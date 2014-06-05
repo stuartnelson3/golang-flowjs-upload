@@ -6,17 +6,20 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/gorilla/handlers"
 )
 
 var completedFiles = make(chan string, 100)
 
 func main() {
-	for i := 0; i < 3; i++ {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	for i := 0; i < 8; i++ {
 		go assembleFile(completedFiles)
 	}
 
@@ -38,10 +41,8 @@ func main() {
 		w.Write(body)
 	})
 
-	go func() {
-		http.ListenAndServe("localhost:6060", nil)
-	}()
-	http.ListenAndServe(":3000", m)
+	handler := handlers.LoggingHandler(os.Stdout, m)
+	http.ListenAndServe(":3000", handler)
 }
 
 type ByChunk []os.FileInfo
@@ -85,6 +86,7 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	buf := new(bytes.Buffer)
 	reader, err := r.MultipartReader()
 	// Part 1: Chunk Number
+	// Part 4: Total Size (bytes)
 	// Part 6: File Name
 	// Part 8: Total Chunks
 	// Part 9: Chunk Data
@@ -92,7 +94,7 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	part, err := reader.NextPart()
+	part, err := reader.NextPart() // 1
 	if err != nil {
 		return err
 	}
@@ -100,7 +102,19 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	chunkNo := buf.String()
 	buf.Reset()
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ { // 2 3 4
+		// move through unused parts
+		part, err = reader.NextPart()
+		if err != nil {
+			return err
+		}
+	}
+
+	io.Copy(buf, part)
+	flowTotalSize := buf.String()
+	buf.Reset()
+
+	for i := 0; i < 2; i++ { // 5 6
 		// move through unused parts
 		part, err = reader.NextPart()
 		if err != nil {
@@ -112,20 +126,12 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 	fileName := buf.String()
 	buf.Reset()
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ { // 7 8 9
 		// move through unused parts
 		part, err = reader.NextPart()
 		if err != nil {
 			return err
 		}
-	}
-	io.Copy(buf, part)
-	chunkTotal := buf.String()
-	buf.Reset()
-
-	part, err = reader.NextPart()
-	if err != nil {
-		return err
 	}
 
 	chunkDirPath := "./incomplete/" + fileName
@@ -146,14 +152,18 @@ func streamingReader(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	cT, err := strconv.Atoi(chunkTotal)
-	if err != nil {
-		return err
-	}
-	if len(fileInfos) == cT {
+	if flowTotalSize == strconv.Itoa(int(totalSize(fileInfos))) {
 		completedFiles <- chunkDirPath
 	}
 	return nil
+}
+
+func totalSize(fileInfos []os.FileInfo) int64 {
+	var sum int64
+	for _, fi := range fileInfos {
+		sum += fi.Size()
+	}
+	return sum
 }
 
 func chunkedReader(w http.ResponseWriter, r *http.Request) error {
@@ -184,12 +194,7 @@ func chunkedReader(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		cT, err := strconv.Atoi(r.FormValue("flowTotalChunks"))
-		if err != nil {
-			return err
-		}
-
-		if len(fileInfos) == cT {
+		if r.FormValue("flowTotalSize") == strconv.Itoa(int(totalSize(fileInfos))) {
 			completedFiles <- chunkDirPath
 		}
 	}
